@@ -43,7 +43,7 @@ func update_token(req *http.Request, token *Token) {
 	res, _ := client.Do(req)
 	body, _ := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
-	if json.Unmarshal(body, &token) != nil {
+	if json.Unmarshal(body, token) != nil {
 		fmt.Println("Error")
 	}
 	token.CreatedTime = int(time.Now().Unix())
@@ -67,6 +67,5 @@ func get_token(token *Token) string {
 
 func main() {
 	var token Token
-	fmt.Println(get_token(&token))
 	fmt.Println(get_token(&token))
 }

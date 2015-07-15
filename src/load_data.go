@@ -25,7 +25,40 @@ type Token struct {
 	CreatedTime int
 }
 
-func config_request() *http.Request {
+type QuotaMetaData struct {
+	Guid    string `json:"guid"`
+	Url     string `json:"url"`
+	Created string `json:"created_at"`
+	Updated string `json:"updated_at"`
+}
+
+type QuotaEntity struct {
+	Name                    string `json:"name"`
+	NonBasicServicesAllowed bool   `json:"non_basic_services_allowed"`
+	TotalServices           int    `json:"total_services"`
+	TotalRoutes             int    `json:"total_routes"`
+	TrialDBAllowed          bool   `json:"trial_db_allowed"`
+	MemoryLimit             int    `json:"instance_memory_limit"`
+}
+
+type QuotaResource struct {
+	MetaData QuotaMetaData `json:"metadata"`
+	Entity   QuotaEntity   `json:"entity"`
+}
+
+type APIResponse struct {
+	TotalResults int    `json:"total_results"`
+	TotalPages   int    `json:"total_pages"`
+	PrevUrl      string `json:"prev_url"`
+	NextUrl      string `josn:"next_url"`
+}
+
+type QuotaAPIResponse struct {
+	APIResponse
+	Resources []QuotaResource `json:"resources"`
+}
+
+func config_token_request() *http.Request {
 	token_url := fmt.Sprintf("https://uaa.%s/oauth/token", os.Getenv("API_URL"))
 	data := url.Values{}
 	data.Set("grant_type", "password")
@@ -52,11 +85,11 @@ func update_token(req *http.Request, token *Token) {
 func get_token(token *Token) string {
 	var action string
 	if token.CreatedTime == 0 {
-		req := config_request()
+		req := config_token_request()
 		update_token(req, token)
 		action = "Updated"
 	} else if int(time.Now().Unix())-token.CreatedTime > token.Expires {
-		req := config_request()
+		req := config_token_request()
 		update_token(req, token)
 		action = "Refreshed"
 	} else {
@@ -65,7 +98,32 @@ func get_token(token *Token) string {
 	return action
 }
 
+func make_request(req_url string, token *Token) {
+	get_token(token)
+	fmt.Println(req_url)
+	req, _ := http.NewRequest("GET", req_url, nil)
+	req.Header.Set("authorization", fmt.Sprintf("bearer %s", token.AccessToken))
+	client := &http.Client{}
+	res, _ := client.Do(req)
+	body, _ := ioutil.ReadAll(res.Body)
+	defer res.Body.Close()
+	var quotas QuotaAPIResponse
+	if json.Unmarshal(body, &quotas) != nil {
+		fmt.Println("Error")
+	}
+	fmt.Println(quotas.TotalResults)
+	fmt.Println(quotas.Resources[1])
+}
+
+func get_quotas(token *Token) {
+	req_url := fmt.Sprintf("https://api.%s%s", os.Getenv("API_URL"), "/v2/quota_definitions")
+	make_request(req_url, token)
+}
+
 func main() {
+	// Initalize Token
 	var token Token
 	fmt.Println(get_token(&token))
+	// Get Quotas data
+	get_quotas(&token)
 }

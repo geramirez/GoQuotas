@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	_ "github.com/lib/pq"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -98,26 +100,26 @@ func get_token(token *Token) string {
 	return action
 }
 
-func make_request(req_url string, token *Token) {
+func make_request(req_url string, token *Token) *http.Response {
 	get_token(token)
 	fmt.Println(req_url)
 	req, _ := http.NewRequest("GET", req_url, nil)
 	req.Header.Set("authorization", fmt.Sprintf("bearer %s", token.AccessToken))
 	client := &http.Client{}
 	res, _ := client.Do(req)
+	return res
+}
+
+func get_quotas(token *Token) *QuotaAPIResponse {
+	req_url := fmt.Sprintf("https://api.%s%s", os.Getenv("API_URL"), "/v2/quota_definitions")
+	res := make_request(req_url, token)
 	body, _ := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 	var quotas QuotaAPIResponse
 	if json.Unmarshal(body, &quotas) != nil {
 		fmt.Println("Error")
 	}
-	fmt.Println(quotas.TotalResults)
-	fmt.Println(quotas.Resources[1])
-}
-
-func get_quotas(token *Token) {
-	req_url := fmt.Sprintf("https://api.%s%s", os.Getenv("API_URL"), "/v2/quota_definitions")
-	make_request(req_url, token)
+	return &quotas
 }
 
 func main() {
@@ -125,5 +127,36 @@ func main() {
 	var token Token
 	fmt.Println(get_token(&token))
 	// Get Quotas data
-	get_quotas(&token)
+	quotas := get_quotas(&token)
+	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer db.Close()
+	for _, quota := range quotas.Resources {
+		err = db.QueryRow(
+			`INSERT INTO quotas(guid, name) VALUES($1, $2)`,
+			quota.MetaData.Guid,
+			quota.Entity.Name).Scan()
+		if err != nil {
+			fmt.Println(err)
+		}
+		err = db.QueryRow(
+			"INSERT INTO quotadata(guid, memory, date) VALUES($1, $2, $3)",
+			quota.MetaData.Guid,
+			quota.Entity.MemoryLimit,
+			time.Now().Format("2006-01-02")).Scan()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+	rows, _ := db.Query("SELECT name FROM quotas")
+	for rows.Next() {
+		var name string
+		err = rows.Scan(&name)
+		if err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println("Name:", name)
+	}
 }

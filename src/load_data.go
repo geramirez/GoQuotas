@@ -14,6 +14,7 @@ import (
 )
 
 type TokenRes struct {
+	// Basic token struct that CF url returns
 	AccessToken  string `json:"access_token"`
 	Expires      int    `json:"expires_in"`
 	TokenType    string `json:"token_type"`
@@ -23,11 +24,13 @@ type TokenRes struct {
 }
 
 type Token struct {
+	// Modified token struct with a time stamp to check if it's expired
 	TokenRes
 	CreatedTime int
 }
 
 type QuotaMetaData struct {
+	// Quota meta data struct returned from the CF api
 	Guid    string `json:"guid"`
 	Url     string `json:"url"`
 	Created string `json:"created_at"`
@@ -35,6 +38,7 @@ type QuotaMetaData struct {
 }
 
 type QuotaEntity struct {
+	// Quota entity sturct returned from the CF api
 	Name                    string `json:"name"`
 	NonBasicServicesAllowed bool   `json:"non_basic_services_allowed"`
 	TotalServices           int    `json:"total_services"`
@@ -45,11 +49,14 @@ type QuotaEntity struct {
 }
 
 type QuotaResource struct {
+	// Quota resource struct returned from the CF api, composed
+	// composed of metadata and entity data.
 	MetaData QuotaMetaData `json:"metadata"`
 	Entity   QuotaEntity   `json:"entity"`
 }
 
 type APIResponse struct {
+	// Basic API struct used in CF api responses
 	TotalResults int    `json:"total_results"`
 	TotalPages   int    `json:"total_pages"`
 	PrevUrl      string `json:"prev_url"`
@@ -57,11 +64,13 @@ type APIResponse struct {
 }
 
 type QuotaAPIResponse struct {
+	// Struct of API response for quota data
 	APIResponse
 	Resources []QuotaResource `json:"resources"`
 }
 
 func config_token_request() *http.Request {
+	// Configure a new token request
 	token_url := fmt.Sprintf("https://uaa.%s/oauth/token", os.Getenv("API_URL"))
 	data := url.Values{}
 	data.Set("grant_type", "password")
@@ -74,7 +83,16 @@ func config_token_request() *http.Request {
 	return req
 }
 
-func update_token(req *http.Request, token *Token) {
+func NewToken() *Token {
+	// Initalize a new token
+	var token Token
+	token.get_token()
+	return &token
+}
+
+func (token *Token) get_token() {
+	// Get a new token
+	req := config_token_request()
 	client := &http.Client{}
 	res, _ := client.Do(req)
 	body, _ := ioutil.ReadAll(res.Body)
@@ -85,24 +103,17 @@ func update_token(req *http.Request, token *Token) {
 	token.CreatedTime = int(time.Now().Unix())
 }
 
-func get_token(token *Token) string {
-	var action string
-	if token.CreatedTime == 0 {
-		req := config_token_request()
-		update_token(req, token)
-		action = "Updated"
-	} else if int(time.Now().Unix())-token.CreatedTime > token.Expires {
-		req := config_token_request()
-		update_token(req, token)
-		action = "Refreshed"
-	} else {
-		action = "None"
+func (token *Token) update_token() {
+	// Check if token has expired, if so updates the token
+	if int(time.Now().Unix())-token.CreatedTime > token.Expires {
+		// replace with a token refresher
+		token.get_token()
 	}
-	return action
 }
 
-func make_request(req_url string, token *Token) *http.Response {
-	get_token(token)
+func (token *Token) make_request(req_url string) *http.Response {
+	// Makes a request to the specific url with the token
+	token.update_token()
 	req, _ := http.NewRequest("GET", req_url, nil)
 	req.Header.Set("authorization", fmt.Sprintf("bearer %s", token.AccessToken))
 	client := &http.Client{}
@@ -110,9 +121,10 @@ func make_request(req_url string, token *Token) *http.Response {
 	return res
 }
 
-func get_quotas(token *Token) *QuotaAPIResponse {
+func (token *Token) get_quotas() *QuotaAPIResponse {
+	// Get a list of quotas and converts it to the QuotaAPIResponse struct
 	req_url := fmt.Sprintf("https://api.%s%s", os.Getenv("API_URL"), "/v2/quota_definitions")
-	res := make_request(req_url, token)
+	res := token.make_request(req_url)
 	body, _ := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 	var quotas QuotaAPIResponse
@@ -123,19 +135,17 @@ func get_quotas(token *Token) *QuotaAPIResponse {
 }
 
 func main() {
-	// Initalize Token
-	var token Token
-	get_token(&token)
-	// Get Quotas data
-	quotas := get_quotas(&token)
+	// Collect quotas and quota mememory data
+	token := NewToken()
+	quotas := token.get_quotas()
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		fmt.Println(err)
 	}
 	defer db.Close()
 	for _, quota := range quotas.Resources {
-		err = db.QueryRow(
-			`INSERT INTO quotas(guid, name) VALUES($1, $2)`,
+		err = db.QueryRow(`
+      INSERT INTO quotas(guid, name) VALUES($1, $2)`,
 			quota.MetaData.Guid,
 			quota.Entity.Name).Scan()
 		if err != nil {
@@ -149,14 +159,5 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 		}
-	}
-	rows, _ := db.Query("SELECT name FROM quotas")
-	for rows.Next() {
-		var name string
-		err = rows.Scan(&name)
-		if err != nil {
-			fmt.Println(err)
-		}
-		fmt.Println("Name:", name)
 	}
 }

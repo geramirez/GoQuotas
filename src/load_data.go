@@ -39,8 +39,9 @@ type QuotaEntity struct {
 	NonBasicServicesAllowed bool   `json:"non_basic_services_allowed"`
 	TotalServices           int    `json:"total_services"`
 	TotalRoutes             int    `json:"total_routes"`
+	MemoryLimit             int    `json:"memory_limit"`
 	TrialDBAllowed          bool   `json:"trial_db_allowed"`
-	MemoryLimit             int    `json:"instance_memory_limit"`
+	InstanceMemoryLimit     int    `json:"instance_memory_limit"`
 }
 
 type QuotaResource struct {
@@ -102,7 +103,6 @@ func get_token(token *Token) string {
 
 func make_request(req_url string, token *Token) *http.Response {
 	get_token(token)
-	fmt.Println(req_url)
 	req, _ := http.NewRequest("GET", req_url, nil)
 	req.Header.Set("authorization", fmt.Sprintf("bearer %s", token.AccessToken))
 	client := &http.Client{}
@@ -125,7 +125,7 @@ func get_quotas(token *Token) *QuotaAPIResponse {
 func main() {
 	// Initalize Token
 	var token Token
-	fmt.Println(get_token(&token))
+	get_token(&token)
 	// Get Quotas data
 	quotas := get_quotas(&token)
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))

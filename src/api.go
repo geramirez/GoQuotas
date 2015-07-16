@@ -28,8 +28,9 @@ func main() {
 
 	router := httprouter.New()
 	router.GET("/", Index)
-	router.GET("/quotas", QuotaIndex)
-	router.GET("/quotas/:guid", QuotaDetails)
+	router.GET("/api/quotas", QuotaIndex)
+	router.GET("/api/quotas/:guid", QuotaDetails)
+	router.ServeFiles("/static/*filepath", http.Dir("static/"))
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
 

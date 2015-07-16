@@ -2,18 +2,24 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"github.com/julienschmidt/httprouter"
 	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
+type memory struct {
+	MemoryLimit int `json:"memory"`
+	Days        int `json:"days"`
+}
+
 type Quota struct {
-	Guid string `json:"guid"`
-	Name string `json:"name"`
+	Guid   string   `json:"guid"`
+	Name   string   `json:"name"`
+	Memory []memory `json:"data"`
 }
 
 type Quotas []Quota
@@ -37,18 +43,15 @@ func QuotaIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	rows, _ := db.Query("SELECT * FROM quotas")
-	var quotas Quotas
-	for rows.Next() {
-		var name string
-		var guid string
-		err = rows.Scan(&guid, &name)
-		if err != nil {
-			fmt.Println(err)
-		}
-		quotas = append(quotas, Quota{guid, name})
+	defer db.Close()
+	var quotas string
+	err = db.QueryRow(`
+		SELECT json_agg(t) AS elements FROM (SELECT guid, name, data FROM quotas_view ) t
+	`).Scan(&quotas)
+	if err != nil {
+		fmt.Println(err)
 	}
-	json.NewEncoder(w).Encode(quotas)
+	fmt.Fprint(w, quotas)
 }
 
 func QuotaDetails(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
@@ -57,17 +60,11 @@ func QuotaDetails(w http.ResponseWriter, r *http.Request, ps httprouter.Params) 
 	if err != nil {
 		fmt.Println(err)
 	}
-	rows, _ := db.Query("SELECT * FROM quotas WHERE guid = $1", ps.ByName("guid"))
-	var quota Quota
-	for rows.Next() {
-		var name string
-		var guid string
-		err = rows.Scan(&guid, &name)
-		if err != nil {
-			fmt.Println(err)
-		}
-		quota = Quota{guid, name}
-	}
-	json.NewEncoder(w).Encode(quota)
-
+	defer db.Close()
+	var quotas string
+	err = db.QueryRow(
+		"SELECT details FROM quota_details WHERE guid = $1",
+		ps.ByName("guid"),
+	).Scan(&quotas)
+	fmt.Fprint(w, strings.TrimRight(strings.TrimLeft(quotas, "["), "]"))
 }

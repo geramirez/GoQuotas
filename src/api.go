@@ -3,7 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"github.com/julienschmidt/httprouter"
+	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 	"log"
 	"net/http"
@@ -11,40 +11,25 @@ import (
 	"strings"
 )
 
+// Quota-related structs
 type memory struct {
 	MemoryLimit int `json:"memory"`
 	Days        int `json:"days"`
 }
-
 type Quota struct {
 	Guid   string   `json:"guid"`
 	Name   string   `json:"name"`
 	Memory []memory `json:"data"`
 }
-
 type Quotas []Quota
 
-func main() {
-
-	router := httprouter.New()
-	//TODO: Set to be main route
-	//TODO: Add authentication
-	router.GET("/", Index)
-	router.GET("/api/quotas", QuotaIndex)
-	router.GET("/api/quotas/:guid", QuotaDetails)
-	router.ServeFiles("/static/*filepath", http.Dir("static/"))
-	router.ServeFiles("/dist/*filepath", http.Dir("static/dist/"))
-
-	log.Fatal(http.ListenAndServe(":8080", router))
+// Context functions
+type app_context struct {
+	db *sql.DB
 }
 
-func Index(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-	fmt.Fprint(w, "Welcome!\n")
-}
-
-func QuotaIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
-
-	//TODO: Convert to function
+// Query function
+func get_dates(r *http.Request) (string, string) {
 	query_values := r.URL.Query()
 	since := query_values.Get("since")
 	if since == "" {
@@ -54,14 +39,15 @@ func QuotaIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	if until == "" {
 		until = "2050-01-01"
 	}
-	//TODO: Setup to only open once
-	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer db.Close()
+	return since, until
+}
+
+// Route functions
+func (app *app_context) QuotaList(w http.ResponseWriter, r *http.Request) {
+	// Route function for a quota list endpoint
+	since, until := get_dates(r)
 	var quotas string
-	err = db.QueryRow(`
+	app.db.QueryRow(`
 		with quota_details_agg as (
 		  select * from get_quotas_details($1, $2)
 		)
@@ -72,43 +58,47 @@ func QuotaIndex(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		string(since),
 		string(until),
 	).Scan(&quotas)
-	var data string
-	if err == nil {
-		data = fmt.Sprintf(`{"Quotas": %s}`, quotas)
-	} else {
-		fmt.Println(err)
-		data = `{"Quotas": []}`
+	if quotas == "" {
+		quotas = "[]"
 	}
-	fmt.Fprint(w, data)
+	fmt.Fprint(w, fmt.Sprintf(`{"Quotas": %s}`, quotas))
 }
 
-func QuotaDetails(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (app *app_context) QuotaDetails(w http.ResponseWriter, r *http.Request) {
+	// Route function for quota details endpoint
+	guid := mux.Vars(r)["guid"]
+	since, until := get_dates(r)
 
-	//TODO: Convert to function
-	query_values := r.URL.Query()
-	since := query_values.Get("since")
-	if since == "" {
-		since = "1970-01-01"
-	}
-	until := query_values.Get("until")
-	if until == "" {
-		until = "2050-01-01"
-	}
-
-	//TODO: Setup to only open once
-	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer db.Close()
 	var quotas string
-	err = db.QueryRow(`
+	app.db.QueryRow(`
 		SELECT details
 		FROM get_quotas($1, $2)
 		WHERE guid = $3`,
 		since,
 		until,
-		ps.ByName("guid"),
+		guid,
 	).Scan(&quotas)
+	fmt.Println(quotas)
+	if quotas == "" {
+		quotas = "{}"
+	}
 	fmt.Fprint(w, strings.TrimRight(strings.TrimLeft(quotas, "["), "]"))
+}
+
+func main() {
+
+	//Open Database
+	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer db.Close()
+
+	context := &app_context{db: db}
+	router := mux.NewRouter()
+	//TODO: Add authentication
+	router.HandleFunc("/api/quotas", context.QuotaList)
+	router.HandleFunc("/api/quotas/{guid}", context.QuotaDetails)
+	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static/")))
+	log.Fatal(http.ListenAndServe(":8080", router))
 }

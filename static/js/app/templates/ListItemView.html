@@ -1,0 +1,10 @@
+<td><%- name %></td>
+<td><%- guid %></td>
+<td>$<%- cost %></td>
+<td>
+  <ul>
+    <% data.forEach(function(usage) { %>
+      <li>Ran for <%- usage.days %> days and used <%- usage.memory %> MBs</li>
+    <% }) %>
+  </ul>
+</td>

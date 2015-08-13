@@ -85,6 +85,21 @@ func (app *app_context) QuotaDetails(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, strings.TrimRight(strings.TrimLeft(quotas, "["), "]"))
 }
 
+// Route functions
+func (app *app_context) CSVView(w http.ResponseWriter, r *http.Request) {
+	// Route function for a quota list endpoint
+	since, until := get_dates(r)
+	var csv string
+	app.db.QueryRow(`
+		COPY (SELECT guid, name, cost FROM get_quotas_details($1, $2)) TO STDOUT WITH CSV HEADER;
+		`,
+		string(since),
+		string(until),
+	).Scan(&csv)
+	fmt.Println(csv)
+	fmt.Fprint(w, fmt.Sprintf(`%s`, csv))
+}
+
 func main() {
 
 	//Open Database
@@ -99,6 +114,7 @@ func main() {
 	//TODO: Add authentication
 	router.HandleFunc("/api/quotas", context.QuotaList)
 	router.HandleFunc("/api/quotas/{guid}", context.QuotaDetails)
+	router.HandleFunc("/quotas.csv", context.CSVView)
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static/")))
 	log.Fatal(http.ListenAndServe(":8080", router))
 }

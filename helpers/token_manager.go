@@ -1,8 +1,7 @@
-package main
+package helpers
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	_ "github.com/lib/pq"
@@ -27,6 +26,20 @@ type Token struct {
 	// Modified token struct with a time stamp to check if it's expired
 	TokenRes
 	CreatedTime int
+}
+
+type APIResponse struct {
+	// Basic API struct used in CF api responses
+	TotalResults int    `json:"total_results"`
+	TotalPages   int    `json:"total_pages"`
+	PrevUrl      string `json:"prev_url"`
+	NextUrl      string `josn:"next_url"`
+}
+
+type QuotaAPIResponse struct {
+	// Struct of API response for quota data
+	APIResponse
+	Resources []QuotaResource `json:"resources"`
 }
 
 type QuotaMetaData struct {
@@ -55,19 +68,6 @@ type QuotaResource struct {
 	Entity   QuotaEntity   `json:"entity"`
 }
 
-type APIResponse struct {
-	// Basic API struct used in CF api responses
-	TotalResults int    `json:"total_results"`
-	TotalPages   int    `json:"total_pages"`
-	PrevUrl      string `json:"prev_url"`
-	NextUrl      string `josn:"next_url"`
-}
-
-type QuotaAPIResponse struct {
-	// Struct of API response for quota data
-	APIResponse
-	Resources []QuotaResource `json:"resources"`
-}
 
 func config_token_request() *http.Request {
 	// Configure a new token request
@@ -121,7 +121,8 @@ func (token *Token) make_request(req_url string) *http.Response {
 	return res
 }
 
-func (token *Token) get_quotas() *QuotaAPIResponse {
+
+func (token *Token) GetQuotas() *QuotaAPIResponse {
 	// Get a list of quotas and converts it to the QuotaAPIResponse struct
 	req_url := fmt.Sprintf("https://api.%s%s", os.Getenv("API_URL"), "/v2/quota_definitions")
 	res := token.make_request(req_url)
@@ -132,32 +133,4 @@ func (token *Token) get_quotas() *QuotaAPIResponse {
 		fmt.Println("Error")
 	}
 	return &quotas
-}
-
-func main() {
-	// Collect quotas and quota mememory data
-	token := NewToken()
-	quotas := token.get_quotas()
-	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer db.Close()
-	for _, quota := range quotas.Resources {
-		err = db.QueryRow(`
-      INSERT INTO quotas(guid, name) VALUES($1, $2)`,
-			quota.MetaData.Guid,
-			quota.Entity.Name).Scan()
-		if err != nil {
-			fmt.Println(err)
-		}
-		err = db.QueryRow(
-			"INSERT INTO quotadata(guid, memory, date) VALUES($1, $2, $3)",
-			quota.MetaData.Guid,
-			quota.Entity.MemoryLimit,
-			time.Now().Format("2006-01-02")).Scan()
-		if err != nil {
-			fmt.Println(err)
-		}
-	}
 }

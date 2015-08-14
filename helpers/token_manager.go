@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	_ "github.com/lib/pq"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -33,41 +32,8 @@ type APIResponse struct {
 	TotalResults int    `json:"total_results"`
 	TotalPages   int    `json:"total_pages"`
 	PrevUrl      string `json:"prev_url"`
-	NextUrl      string `josn:"next_url"`
+	NextUrl      string `json:"next_url"`
 }
-
-type QuotaAPIResponse struct {
-	// Struct of API response for quota data
-	APIResponse
-	Resources []QuotaResource `json:"resources"`
-}
-
-type QuotaMetaData struct {
-	// Quota meta data struct returned from the CF api
-	Guid    string `json:"guid"`
-	Url     string `json:"url"`
-	Created string `json:"created_at"`
-	Updated string `json:"updated_at"`
-}
-
-type QuotaEntity struct {
-	// Quota entity sturct returned from the CF api
-	Name                    string `json:"name"`
-	NonBasicServicesAllowed bool   `json:"non_basic_services_allowed"`
-	TotalServices           int    `json:"total_services"`
-	TotalRoutes             int    `json:"total_routes"`
-	MemoryLimit             int    `json:"memory_limit"`
-	TrialDBAllowed          bool   `json:"trial_db_allowed"`
-	InstanceMemoryLimit     int    `json:"instance_memory_limit"`
-}
-
-type QuotaResource struct {
-	// Quota resource struct returned from the CF api, composed
-	// composed of metadata and entity data.
-	MetaData QuotaMetaData `json:"metadata"`
-	Entity   QuotaEntity   `json:"entity"`
-}
-
 
 func config_token_request() *http.Request {
 	// Configure a new token request
@@ -119,18 +85,4 @@ func (token *Token) make_request(req_url string) *http.Response {
 	client := &http.Client{}
 	res, _ := client.Do(req)
 	return res
-}
-
-
-func (token *Token) GetQuotas() *QuotaAPIResponse {
-	// Get a list of quotas and converts it to the QuotaAPIResponse struct
-	req_url := fmt.Sprintf("https://api.%s%s", os.Getenv("API_URL"), "/v2/quota_definitions")
-	res := token.make_request(req_url)
-	body, _ := ioutil.ReadAll(res.Body)
-	defer res.Body.Close()
-	var quotas QuotaAPIResponse
-	if json.Unmarshal(body, &quotas) != nil {
-		fmt.Println("Error")
-	}
-	return &quotas
 }

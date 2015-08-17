@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -10,18 +12,6 @@ import (
 	"os"
 	"strings"
 )
-
-// Quota-related structs
-type memory struct {
-	MemoryLimit int `json:"memory"`
-	Days        int `json:"days"`
-}
-type Quota struct {
-	Guid   string   `json:"guid"`
-	Name   string   `json:"name"`
-	Memory []memory `json:"data"`
-}
-type Quotas []Quota
 
 // Context functions
 type app_context struct {
@@ -78,7 +68,6 @@ func (app *app_context) QuotaDetails(w http.ResponseWriter, r *http.Request) {
 		until,
 		guid,
 	).Scan(&quotas)
-	fmt.Println(quotas)
 	if quotas == "" {
 		quotas = "{}"
 	}
@@ -89,15 +78,24 @@ func (app *app_context) QuotaDetails(w http.ResponseWriter, r *http.Request) {
 func (app *app_context) CSVView(w http.ResponseWriter, r *http.Request) {
 	// Route function for a quota list endpoint
 	since, until := get_dates(r)
-	var csv string
-	app.db.QueryRow(`
-		COPY (SELECT guid, name, cost FROM get_quotas_details($1, $2)) TO STDOUT WITH CSV HEADER;
+	rows, _ := app.db.Query(`
+		select guid, name, cost from get_quotas_details($1, $2);
 		`,
-		string(since),
-		string(until),
-	).Scan(&csv)
-	fmt.Println(csv)
-	fmt.Fprint(w, fmt.Sprintf(`%s`, csv))
+		since,
+		until)
+	defer rows.Close()
+	b := &bytes.Buffer{}
+	wr := csv.NewWriter(b)
+	wr.Write([]string{"guid", "name", "cost"})
+	for rows.Next() {
+		var guid, name string
+		var cost string
+		rows.Scan(&guid, &name, &cost)
+		wr.Write([]string{guid, name, cost})
+	}
+	wr.Flush()
+	w.Header().Set("Content-Type", "text/csv")
+	fmt.Fprint(w, string(b.Bytes()))
 }
 
 func main() {

@@ -50,7 +50,7 @@ func (token *Token) getEvent(eventUrl string) *EventAPIResponse {
 	body, _ := ioutil.ReadAll(res.Body)
 	defer res.Body.Close()
 	var events EventAPIResponse
-	if json.Unmarshal(body, &events) != nil {
+	if json.Unmarshal(body, &events) == nil {
 		fmt.Println("Error")
 	}
 	return &events

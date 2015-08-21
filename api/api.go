@@ -5,12 +5,13 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
 
 // Context functions
@@ -99,7 +100,6 @@ func (app *app_context) CSVView(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-
 	//Open Database
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {

@@ -1,4 +1,4 @@
-package main
+package dataloaders
 
 import (
 	"database/sql"
@@ -10,7 +10,7 @@ import (
 	helpers "github.com/ramirezg/GoQuotas/helpers"
 )
 
-func main() {
+func GetQuotas() {
 	// Collect quotas and quota mememory data
 	token := helpers.NewToken()
 	quotas := token.GetQuotas()
